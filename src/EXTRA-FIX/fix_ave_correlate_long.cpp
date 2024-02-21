@@ -300,11 +300,12 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
   memory->create(shift,npair,numcorrelators,p,"correlator:shift");
   memory->create(shift2,npair,numcorrelators,p,"correlator:shift2"); //NOT OPTMAL
   memory->create(correlation,npair,numcorrelators,p,"correlator:correlation");
-  memory->create(accumulator,npair,numcorrelators,"correlator:accumulator");
-  memory->create(accumulator2,npair,numcorrelators,"correlator:accumulator2"); // NOT OPTIMAL
-
+  if (averaged) {
+    memory->create(accumulator,npair,numcorrelators,"correlator:accumulator");
+    memory->create(accumulator2,npair,numcorrelators,"correlator:accumulator2"); // NOT OPTIMAL
+    memory->create(naccumulator,numcorrelators,"correlator:naccumulator");
+  }
   memory->create(ncorrelation,numcorrelators,p,"correlator:ncorrelation");
-  memory->create(naccumulator,numcorrelators,"correlator:naccumulator");
   memory->create(insertindex,numcorrelators,"correlator:insertindex");
   memory->create(t,length,"correlator:t");
   memory->create(f,npair,length,"correlator:f");
@@ -316,13 +317,15 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
         shift2[i][j][k]=0.0;
         correlation[i][j][k]=0.0;
       }
-      accumulator[i][j]=0.0;
-      accumulator2[i][j]=0.0;
+      if (averaged) {
+        accumulator[i][j]=0.0;
+        accumulator2[i][j]=0.0;
+      }
     }
 
   for (int i=0; i < numcorrelators; i++) {
     for (unsigned int j=0; j < p; j++) ncorrelation[i][j]=0;
-    naccumulator[i]=0;
+    if (averaged) naccumulator[i]=0;
     insertindex[i]=0;
   }
 
@@ -726,10 +729,11 @@ double FixAveCorrelateLong::memory_usage() {
   //    insertindex:      numcorrelators
   //    t:              numcorrelators x p
   //    f:              npair x numcorrelators x p
-  double bytes = (4*npair*numcorrelators*p + 2*npair*numcorrelators
+  double bytes = (4*npair*numcorrelators*p 
+                  + 2*npair*numcorrelators * averaged
                   + numcorrelators*p)*sizeof(double)
     + (double)numcorrelators*p*sizeof(unsigned long int)
-    + 2.0*numcorrelators*sizeof(unsigned int);
+    + (1.0+averaged)*numcorrelators*sizeof(unsigned int);
   return bytes;
 }
 
@@ -739,8 +743,9 @@ double FixAveCorrelateLong::memory_usage() {
 // Save everything except t and f
 void FixAveCorrelateLong::write_restart(FILE *fp) {
   if (comm->me == 0) {
-    int nsize = 3*npair*numcorrelators*p + 2*npair*numcorrelators
-                + numcorrelators*p + 2*numcorrelators + 8;
+    int nsize = 3*npair*numcorrelators*p 
+                + 2*npair*numcorrelators * averaged
+                + numcorrelators*p + (1+averaged)*numcorrelators + 8;
     int n=0;
     double *list;
     memory->create(list,nsize,"correlator:list");
@@ -758,12 +763,14 @@ void FixAveCorrelateLong::write_restart(FILE *fp) {
           list[n++]=shift2[i][j][k];
           list[n++]=correlation[i][j][k];
         }
-        list[n++]=accumulator[i][j];
-        list[n++]=accumulator2[i][j];
+        if (averaged) {
+          list[n++]=accumulator[i][j];
+          list[n++]=accumulator2[i][j];
+        }
       }
     for (int i=0; i<numcorrelators; i++) {
       for (unsigned int j=0; j < p; j++) list[n++]=ncorrelation[i][j];
-      list[n++]=naccumulator[i];
+      if (averaged) list[n++]=naccumulator[i];
       list[n++]=insertindex[i];
     }
 
@@ -799,13 +806,15 @@ void FixAveCorrelateLong::restart(char *buf)
         shift2[i][j][k] = list[n++];
         correlation[i][j][k] = list[n++];
       }
-      accumulator[i][j] = list[n++];
-      accumulator2[i][j] = list[n++];
+      if (averaged) {
+        accumulator[i][j] = list[n++];
+        accumulator2[i][j] = list[n++];
+      }
     }
   for (int i=0; i < numcorrelators; i++) {
     for (unsigned int j=0; j < p; j++)
       ncorrelation[i][j] = static_cast<unsigned long int>(list[n++]);
-    naccumulator[i] = static_cast<unsigned int>(list[n++]);
+    if (averaged) naccumulator[i] = static_cast<unsigned int>(list[n++]);
     insertindex[i] = static_cast<unsigned int>(list[n++]);
   }
 }
