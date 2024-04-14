@@ -53,7 +53,7 @@ class FixAveCorrelateLong : public Fix {
   int numcorrelators;    // Recommended 20
   unsigned int p;        // Points per correlator (recommended 16)
   unsigned int m;        // Num points for average (recommended 2; p mod m = 0)
-  unsigned int dmin;     // Min distance between ponts for correlators k>0; dmin=p/m
+  unsigned int dmin;     // Min distance between points for correlators k>0; dmin=p/m
 
   int length;    // Length of result arrays
   int kmax;      // Maximum correlator attained during simulation
@@ -74,7 +74,7 @@ class FixAveCorrelateLong : public Fix {
   bigint nvalid, nvalid_last, last_accumulated_step;
   FILE *fp;
 
-  int type, startstep, overwrite;
+  int type, startstep, overwrite, averaged;
   bigint filepos;
 
   int npair;    // number of correlation pairs to calculate

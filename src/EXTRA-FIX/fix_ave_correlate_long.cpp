@@ -116,6 +116,7 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
   numcorrelators = 20;
   p = 16;
   m = 2;
+  averaged = 1;
   char *title1 = nullptr;
   char *title2 = nullptr;
 
@@ -153,6 +154,9 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
       if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long ncount", error);
       m = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
       iarg += 2;
+    } else if (strcmp(arg[iarg], "nonaveraged") == 0) {
+      averaged = 0;
+      iarg += 1;
     } else if (strcmp(arg[iarg], "file") == 0) {
       if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long file", error);
       if (comm->me == 0) {
@@ -296,11 +300,12 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
   memory->create(shift,npair,numcorrelators,p,"correlator:shift");
   memory->create(shift2,npair,numcorrelators,p,"correlator:shift2"); //NOT OPTMAL
   memory->create(correlation,npair,numcorrelators,p,"correlator:correlation");
-  memory->create(accumulator,npair,numcorrelators,"correlator:accumulator");
-  memory->create(accumulator2,npair,numcorrelators,"correlator:accumulator2"); // NOT OPTIMAL
-
+  if (averaged) {
+    memory->create(accumulator,npair,numcorrelators,"correlator:accumulator");
+    memory->create(accumulator2,npair,numcorrelators,"correlator:accumulator2"); // NOT OPTIMAL
+    memory->create(naccumulator,numcorrelators,"correlator:naccumulator");
+  }
   memory->create(ncorrelation,numcorrelators,p,"correlator:ncorrelation");
-  memory->create(naccumulator,numcorrelators,"correlator:naccumulator");
   memory->create(insertindex,numcorrelators,"correlator:insertindex");
   memory->create(t,length,"correlator:t");
   memory->create(f,npair,length,"correlator:f");
@@ -312,13 +317,15 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
         shift2[i][j][k]=0.0;
         correlation[i][j][k]=0.0;
       }
-      accumulator[i][j]=0.0;
-      accumulator2[i][j]=0.0;
+      if (averaged) {
+        accumulator[i][j]=0.0;
+        accumulator2[i][j]=0.0;
+      }
     }
 
   for (int i=0; i < numcorrelators; i++) {
     for (unsigned int j=0; j < p; j++) ncorrelation[i][j]=0;
-    naccumulator[i]=0;
+    if (averaged) naccumulator[i]=0;
     insertindex[i]=0;
   }
 
@@ -454,8 +461,6 @@ void FixAveCorrelateLong::end_of_step()
         scalar = val.val.f->compute_vector(val.argindex-1);
 
     // evaluate equal-style or vector-style variable
-    // if index exceeds vector length, use a zero value
-    //   this can be useful if vector length is not known a priori
 
     } else if (val.which == ArgInfo::VARIABLE) {
       if (val.argindex == 0)
@@ -464,7 +469,7 @@ void FixAveCorrelateLong::end_of_step()
         double *varvec;
         int nvec = input->variable->compute_vector(val.val.v,&varvec);
         int index = val.argindex;
-        if (index > nvec) scalar = 0.0;
+        if (nvec < index) scalar = 0.0;
         else scalar = varvec[index-1];
       }
     }
@@ -597,12 +602,16 @@ void FixAveCorrelateLong::add(const int i, const double w, const int k) {
   shift[i][k][insertindex[k]] = w;
 
   // Add to accumulator and, if needed, add to next correlator
-  accumulator[i][k] += w;
-  if (i == 0) ++naccumulator[k];
-  if (naccumulator[k]==m) {
-    add(i,accumulator[i][k]/m, k+1);
-    accumulator[i][k]=0;
-    if (i == npair-1) naccumulator[k]=0;
+  if (averaged) {
+    accumulator[i][k] += w;
+    if (i == 0) ++naccumulator[k];
+    if (naccumulator[k]==m) {
+      add(i,accumulator[i][k]/m, k+1);
+      accumulator[i][k]=0;
+      if (i == npair-1) naccumulator[k]=0;
+    }
+  } else if (insertindex[k]%m==0) {
+      add(i,w, k+1);
   }
 
   // Calculate correlation function
@@ -646,14 +655,18 @@ void FixAveCorrelateLong::add(const int i, const double wA, const double wB, con
   shift[i][k][insertindex[k]] = wA;
   shift2[i][k][insertindex[k]] = wB;
 
-  accumulator[i][k] += wA;
-  accumulator2[i][k] += wB;
-  if (i == 0) ++naccumulator[k];
-  if (naccumulator[k] == m) {
-    add(i,accumulator[i][k]/m, accumulator2[i][k]/m,k+1);
-    accumulator[i][k]=0;
-    accumulator2[i][k]=0;
-    if (i == npair-1) naccumulator[k]=0;
+  if (averaged) {
+    accumulator[i][k] += wA;
+    accumulator2[i][k] += wB;
+    if (i == 0) ++naccumulator[k];
+    if (naccumulator[k] == m) {
+      add(i,accumulator[i][k]/m, accumulator2[i][k]/m,k+1);
+      accumulator[i][k]=0;
+      accumulator2[i][k]=0;
+      if (i == npair-1) naccumulator[k]=0;
+    }
+  } else if (insertindex[k]%m==0) {
+    add(i,wA,wB,k+1);
   }
 
   unsigned int ind1=insertindex[k];
@@ -716,10 +729,11 @@ double FixAveCorrelateLong::memory_usage() {
   //    insertindex:      numcorrelators
   //    t:              numcorrelators x p
   //    f:              npair x numcorrelators x p
-  double bytes = (4*npair*numcorrelators*p + 2*npair*numcorrelators
+  double bytes = (4*npair*numcorrelators*p 
+                  + 2*npair*numcorrelators * averaged
                   + numcorrelators*p)*sizeof(double)
     + (double)numcorrelators*p*sizeof(unsigned long int)
-    + 2.0*numcorrelators*sizeof(unsigned int);
+    + (1.0+averaged)*numcorrelators*sizeof(unsigned int);
   return bytes;
 }
 
@@ -729,8 +743,9 @@ double FixAveCorrelateLong::memory_usage() {
 // Save everything except t and f
 void FixAveCorrelateLong::write_restart(FILE *fp) {
   if (comm->me == 0) {
-    int nsize = 3*npair*numcorrelators*p + 2*npair*numcorrelators
-                + numcorrelators*p + 2*numcorrelators + 7;
+    int nsize = 3*npair*numcorrelators*p 
+                + 2*npair*numcorrelators * averaged
+                + numcorrelators*p + (1+averaged)*numcorrelators + 8;
     int n=0;
     double *list;
     memory->create(list,nsize,"correlator:list");
@@ -740,6 +755,7 @@ void FixAveCorrelateLong::write_restart(FILE *fp) {
     list[n++] = m;
     list[n++] = kmax;
     list[n++] = last_accumulated_step;
+    list[n++] = averaged;
     for (int i=0; i < npair; i++)
       for (int j=0; j < numcorrelators; j++) {
         for (unsigned int k=0; k < p; k++) {
@@ -747,12 +763,14 @@ void FixAveCorrelateLong::write_restart(FILE *fp) {
           list[n++]=shift2[i][j][k];
           list[n++]=correlation[i][j][k];
         }
-        list[n++]=accumulator[i][j];
-        list[n++]=accumulator2[i][j];
+        if (averaged) {
+          list[n++]=accumulator[i][j];
+          list[n++]=accumulator2[i][j];
+        }
       }
     for (int i=0; i<numcorrelators; i++) {
       for (unsigned int j=0; j < p; j++) list[n++]=ncorrelation[i][j];
-      list[n++]=naccumulator[i];
+      if (averaged) list[n++]=naccumulator[i];
       list[n++]=insertindex[i];
     }
 
@@ -776,8 +794,9 @@ void FixAveCorrelateLong::restart(char *buf)
   int min = static_cast<int>(list[n++]);
   kmax = static_cast<int>(list[n++]);
   last_accumulated_step = static_cast<int>(list[n++]);
+  int averagedin = static_cast<int>(list[n++]);
 
-  if ((npairin!=npair) || (numcorrelatorsin!=numcorrelators) || (pin!=(int)p) || (min!=(int)m))
+  if ((npairin!=npair) || (numcorrelatorsin!=numcorrelators) || (pin!=(int)p) || (min!=(int)m) || (averagedin!=averaged))
     error->all(FLERR, "Fix ave/correlate/long: restart and input data are different");
 
   for (int i=0; i < npair; i++)
@@ -787,13 +806,15 @@ void FixAveCorrelateLong::restart(char *buf)
         shift2[i][j][k] = list[n++];
         correlation[i][j][k] = list[n++];
       }
-      accumulator[i][j] = list[n++];
-      accumulator2[i][j] = list[n++];
+      if (averaged) {
+        accumulator[i][j] = list[n++];
+        accumulator2[i][j] = list[n++];
+      }
     }
   for (int i=0; i < numcorrelators; i++) {
     for (unsigned int j=0; j < p; j++)
       ncorrelation[i][j] = static_cast<unsigned long int>(list[n++]);
-    naccumulator[i] = static_cast<unsigned int>(list[n++]);
+    if (averaged) naccumulator[i] = static_cast<unsigned int>(list[n++]);
     insertindex[i] = static_cast<unsigned int>(list[n++]);
   }
 }
