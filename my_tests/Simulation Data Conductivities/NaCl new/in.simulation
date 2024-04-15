@@ -37,10 +37,6 @@ variable Ncond equal 5        # Nevery for Tconductivity (fix ordern: sample dat
 variable Ndiff equal 500     # Nevery for diffusivity (fix ordern: sample data at (Ndiff))
 variable Nwrit equal 50000   # Nwrite for transport properties (fix ordern: write every (Nwrit))
 
-#################### ATOM DEFINITION and FORCEFIELD ####################
-read_data ./data.lmp                     # read the positions
-include ./forcefield.data                # read the force field
-
 #################### INITIALIZATION ####################
 group wat type 1 2      # O water
 group Na type 3         # Sodium ion
@@ -51,7 +47,7 @@ variable atomid atom id
 variable moltype atom "(v_atomid<=1665)*1 + (v_atomid>1665 && v_atomid<=1685)*2 + (v_atomid>1685)*3"
 compute moltype all chunk/atom v_moltype nchunk once ids once compress no
 # dump chunks all custom 100 types.dat id v_moltype c_moltype
-compute com_moltype all com/chunk c_moltype
+compute com_moltype all com/chunk moltype
 
 # neigbor lists
 neighbor 2.0 bin
@@ -60,97 +56,14 @@ neigh_modify every 1 delay 0 check yes
 # velocity-Verlet integrator
 run_style verlet
 
-# initializing velocities
-velocity all create ${Temp} ${RandomSeed}  
 
 # rate of writing thermal properties to the log file
 thermo_style custom step density temp press etotal
 thermo_modify flush yes
 thermo ${Nf}
 
-#################### 2) Initialize the NPT ensemble ####################
-######### Go to the correct temperature now ant initiate that ##########
-fix constrain all shake 1.0e-6 1000 0 b 1 a 1
-fix integrate all npt temp ${Temp} ${Temp} 10.0 iso ${Pres} ${Pres} 100.0
 
-
-# Initializing the whole system with very small timesteps in the NPT ensemble
-timestep 0.001
-run ${Ninptpre} 
-timestep 0.01
-run ${Ninptpre} 
-timestep 0.1
-run ${Ninptpre} 
-timestep 0.2
-run ${Ninptpre} 
-timestep 0.5
-run ${Ninptpre} 
-reset_timestep 0
-
-# continuing the initialization with the final value of timestep
-unfix integrate
-fix integrate all npt temp ${Temp} ${Temp} 100.0 iso ${Pres} ${Pres} 1000.0
-
-timestep ${tstep}
-run ${Ninpt}
-reset_timestep 0
-
-
-#################### 3) Obtaining average volume in NPT ######################
-# Creating restart files
-restart ${Nf} 1.restart 2.restart
-
-# Getting the average volume of the system
-variable Volume equal vol
-fix VoluAve all ave/time 1 ${Npnpt} ${Npnpt} v_Volume file volume.dat
-
-variable Dens equal density
-fix DensAve all ave/time 1 ${NBR} ${NBR} v_Dens file density.dat
-
-compute T1 all temp
-fix TempAve1 all ave/time 1 ${NBR} ${NBR} c_T1 file temperatureNPT.dat
-
-compute P1 all pressure T1
-fix PressAve1 all ave/time 1 ${NBR} ${NBR} c_P1 file pressureNPT.dat
-
-run ${Npnpt}
-
-#################### 4) Initializing the NVT ensemble ####################
-# scaling the size of the system to the average volume
-variable sidesize equal (f_VoluAve^(1.0/3.0))    # get the volume
-variable xlow equal xlo
-variable ylow equal ylo
-variable zlow equal zlo
-variable xhig equal (xlo+${sidesize})
-variable yhig equal (ylo+${sidesize})
-variable zhig equal (zlo+${sidesize})
-change_box all x final ${xlow} ${xhig} y final ${ylow} ${yhig} z final ${zlow} ${zhig}
-unfix DensAve
-unfix VoluAve
-unfix TempAve1
-unfix PressAve1
-
-# changing the ensemble to NVT
-unfix integrate
-fix integrate all nvt temp ${Temp} ${Temp} 10.0
-
-timestep 0.001
-run ${Ninvtpre} 
-timestep 0.01
-run ${Ninvtpre} 
-timestep 0.1
-run ${Ninvtpre} 
-timestep 0.2
-run ${Ninvtpre} 
-timestep 0.5
-run ${Ninvtpre}
-
-unfix integrate
-fix integrate all nvt temp ${Temp} ${Temp} 100.0
-# continuing the initialization with the final value of timestep
-timestep ${tstep}
-
-run ${Ninvt}
+read_restart restart.equilibrium
 
 reset_timestep 0
 
