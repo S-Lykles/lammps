@@ -117,6 +117,7 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
   p = 16;
   m = 2;
   averaged = 1;
+  msd = 0;
   char *title1 = nullptr;
   char *title2 = nullptr;
 
@@ -156,6 +157,9 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
       iarg += 2;
     } else if (strcmp(arg[iarg], "nonaveraged") == 0) {
       averaged = 0;
+      iarg += 1;
+    } else if (strcmp(arg[iarg], "msd") == 0) {
+      msd = 1;
       iarg += 1;
     } else if (strcmp(arg[iarg], "file") == 0) {
       if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long file", error);
@@ -620,7 +624,12 @@ void FixAveCorrelateLong::add(const int i, const double w, const int k) {
     int ind2=ind1;
     for (unsigned int j=0; j < p; ++j) {
       if (shift[i][k][ind2] > -1e10) {
-        correlation[i][k][j]+= shift[i][k][ind1]*shift[i][k][ind2];
+        if (msd) {
+          double d = shift[i][k][ind1]-shift[i][k][ind2];
+          correlation[i][k][j]+= shift[i][k][ind1]-shift[i][k][ind2];
+        } else {
+          correlation[i][k][j]+= shift[i][k][ind1]*shift[i][k][ind2];
+        }
         if (i==0) ++ncorrelation[k][j];
       }
       --ind2;
@@ -631,7 +640,12 @@ void FixAveCorrelateLong::add(const int i, const double w, const int k) {
     for (unsigned int j=dmin;j<p;++j) {
       if (ind2 < 0) ind2 += p;
       if (shift[i][k][ind2] > -1e10) {
-        correlation[i][k][j]+= shift[i][k][ind1]*shift[i][k][ind2];
+        if (msd) {
+          double d = shift[i][k][ind1]-shift[i][k][ind2];
+          correlation[i][k][j]+= d*d;
+        } else {
+          correlation[i][k][j]+= shift[i][k][ind1]*shift[i][k][ind2];
+        }
         if (i == 0) ++ncorrelation[k][j];
       }
       --ind2;
@@ -674,7 +688,12 @@ void FixAveCorrelateLong::add(const int i, const double wA, const double wB, con
     int ind2=ind1;
     for (unsigned int j=0; j < p; ++j) {
       if (shift[i][k][ind2] > -1e10) {
-        correlation[i][k][j]+= shift[i][k][ind1]*shift2[i][k][ind2];
+        if (msd) {
+          double d = shift[i][k][ind1]-shift2[i][k][ind2];
+          correlation[i][k][j]+= d*d;
+        } else {
+          correlation[i][k][j]+= shift[i][k][ind1]*shift2[i][k][ind2];
+        }
         if (i == 0) ++ncorrelation[k][j];
       }
       --ind2;
@@ -686,7 +705,12 @@ void FixAveCorrelateLong::add(const int i, const double wA, const double wB, con
     for (unsigned int j=dmin; j < p; ++j) {
       if (ind2 < 0) ind2+=p;
       if (shift[i][k][ind2] > -1e10) {
-        correlation[i][k][j]+= shift[i][k][ind1]*shift2[i][k][ind2];
+        if (msd) {
+          double d = shift[i][k][ind1]-shift2[i][k][ind2];
+          correlation[i][k][j]+= d*d;
+        } else {
+          correlation[i][k][j]+= shift[i][k][ind1]*shift2[i][k][ind2];
+        }
         if (i == 0) ++ncorrelation[k][j];
       }
       --ind2;
