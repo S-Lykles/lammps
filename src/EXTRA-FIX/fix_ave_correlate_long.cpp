@@ -626,7 +626,7 @@ void FixAveCorrelateLong::add(const int i, const double w, const int k) {
       if (shift[i][k][ind2] > -1e10) {
         if (msd) {
           double d = shift[i][k][ind1]-shift[i][k][ind2];
-          correlation[i][k][j]+= shift[i][k][ind1]-shift[i][k][ind2];
+          correlation[i][k][j]+= d*d;
         } else {
           correlation[i][k][j]+= shift[i][k][ind1]*shift[i][k][ind2];
         }
@@ -689,8 +689,9 @@ void FixAveCorrelateLong::add(const int i, const double wA, const double wB, con
     for (unsigned int j=0; j < p; ++j) {
       if (shift[i][k][ind2] > -1e10) {
         if (msd) {
-          double d = shift[i][k][ind1]-shift2[i][k][ind2];
-          correlation[i][k][j]+= d*d;
+          double d1 = shift[i][k][ind1]-shift[i][k][ind2];
+          double d2 = shift2[i][k][ind1]-shift2[i][k][ind2];
+          correlation[i][k][j]+= d1*d2;
         } else {
           correlation[i][k][j]+= shift[i][k][ind1]*shift2[i][k][ind2];
         }
@@ -706,8 +707,9 @@ void FixAveCorrelateLong::add(const int i, const double wA, const double wB, con
       if (ind2 < 0) ind2+=p;
       if (shift[i][k][ind2] > -1e10) {
         if (msd) {
-          double d = shift[i][k][ind1]-shift2[i][k][ind2];
-          correlation[i][k][j]+= d*d;
+          double d1 = shift[i][k][ind1]-shift[i][k][ind2];
+          double d2 = shift2[i][k][ind1]-shift2[i][k][ind2];
+          correlation[i][k][j]+= d1*d2;
         } else {
           correlation[i][k][j]+= shift[i][k][ind1]*shift2[i][k][ind2];
         }
